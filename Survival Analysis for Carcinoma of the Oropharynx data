@@ -1,1 +1,255 @@
 Survival Analysis for Carcinoma of the Oropharynx data
+
+Code
+
+# Set working directory
+setwd('C:\\Users\\Mohamed Elhadidy\\Desktop\\Bio\\Project')
+
+#Read the data and explore it
+carcinoma = read.csv(file.choose(), header=T)
+carcinoma
+names(carcinoma)
+
+#Data Cleaning
+
+#Check missing values
+sapply(carcinoma, function(x) sum(is.na(x)))
+#Missing values are stored as '9' in columns 'COND' and 'GRADE'
+colSums(carcinoma=='9')
+
+#Delete rows where condition or grade is missing (which are three rows)
+carcinoma <- carcinoma[carcinoma$GRADE != 9, ]
+carcinoma <- carcinoma[carcinoma$COND != 9, ]
+carcinoma <- carcinoma[carcinoma$COND != 0, ]
+
+
+
+#Make a copy of dataframe and recode its variables for better visualization
+carcinoma_1 <-data.frame(carcinoma)
+
+carcinoma_1$SEX[carcinoma_1$SEX == 2] <- "Female"
+carcinoma_1$SEX[carcinoma_1$SEX == 1] <- "Male"
+
+carcinoma_1$COND[carcinoma_1$COND == 1] <- "No disability"
+carcinoma_1$COND[carcinoma_1$COND == 2] <- "Restricted work"
+carcinoma_1$COND[carcinoma_1$COND == 3] <- "Requires assistance"
+carcinoma_1$COND[carcinoma_1$COND == 4] <- "Bed conifined"
+
+carcinoma_1$TX[carcinoma_1$TX == 1] <- "Standard"
+carcinoma_1$TX[carcinoma_1$TX == 2] <- "Test"
+
+carcinoma_1$STATUS[carcinoma_1$STATUS == 0] <- "Censored"
+carcinoma_1$STATUS[carcinoma_1$STATUS == 1] <- "Dead"
+
+
+#EDA
+#Summary statistics
+summary(carcinoma)
+
+#Data Visualization
+#Bar plots for categorical variables
+library(ggplot2)
+
+#Bar plot for gender
+ggplot(carcinoma_1, aes(x=SEX))+
+  geom_bar(fill= '#5E5A59')+
+  theme_bw()+
+  labs(x = 'Gender', y= 'Frequency',
+       title = 'Gender of patients')
+
+#Bar plot for treatment type
+ggplot(carcinoma_1, aes(x=TX))+
+  geom_bar(fill= '#5E5A59')+
+  theme_bw()+
+  labs(x = 'Treatment', y= 'Frequency',
+       title = 'Type of treatment')
+
+#Bar plot for condition
+ggplot(carcinoma_1, aes(x=COND))+
+  geom_bar(fill= '#5E5A59')+
+  theme_bw()+
+  labs(x = 'Condtion', y= 'Frequency',
+       title = 'Condition of patients')
+
+#Bar plot for event
+ggplot(carcinoma_1, aes(x=STATUS))+
+  geom_bar(fill= '#5E5A59')+
+  theme_bw()+
+  labs(x = 'STATUS', y= 'Frequency',
+       title = 'Status of patients by end of study')
+
+
+#Histograms for numeric variables
+#Histogram for age at diagnosis
+ggplot(carcinoma_1, aes(AGE))+
+  geom_histogram(fill = '#5E5A59', binwidth = 3)+
+  theme_bw()+
+  labs(x = 'Age', y= 'Frequency',
+       title = 'Distribution of Age at diagnosis')
+
+
+#Age by different variables
+ggplot(carcinoma_1, aes(x = AGE, fill = TX))+
+  geom_histogram(bins = 8, position = "dodge")+
+  theme_bw()+
+  labs(x='Age', title='Treatment type by Age')
+
+
+ggplot(carcinoma_1, aes(x = AGE, fill = SEX))+
+  geom_histogram(bins = 8, position = "dodge")+
+  theme_bw()+
+  labs(x='Age', title='Age by gender')
+
+#Treatment by status
+ggplot(data=carcinoma_1, aes(x = STATUS, fill = TX))+
+  geom_bar(position = 'dodge')+
+  theme_bw()+
+  labs(x='Status', title='Status of patient by treatment')
+  
+
+#Survival Analysis
+install.packages("survival") #for survival analyses
+install.packages("survminer") #for survival analysis results visualization 
+library(survival)
+library(survminer)
+
+
+
+#Factorize status 
+failure= factor(carcinoma$STATUS, labels = c("censored","Died"))
+summary(failure) #To check factoriztion is done correctly
+
+#Plot time to event
+ggplot(carcinoma, 
+       aes(x=TIME, 
+           y=CASE)) +
+  geom_segment(aes(x = 0, 
+                   xend = TIME, 
+                   y = CASE, 
+                   yend = CASE),
+               color = "lightgrey") +
+  labs (x = "Time to death/study end (Days)",
+        y = "Case Number",
+        title = "Time to death",
+        subtitle = "Follow-up time (event chart)",
+        caption = "Carcinoma of the Oropharynx Data") +
+  theme_minimal()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  geom_point(aes(shape=failure), size = 1.2) 
+
+
+#kaplan meier estimate
+carcinoma$failure= factor(carcinoma$STATUS, labels = c("censored","Died"))
+attach(carcinoma)
+Surv(TIME, STATUS)
+km_fit <- survfit(Surv(TIME, STATUS) ~ 1, conf.type="log-log", data=carcinoma)
+km_fit
+summary(km_fit)
+
+#Exporting Kaplan Meier table
+km_fit_out <- data.frame(
+  time = km_fit$time,
+  n.risk = km_fit$n.risk,
+  n.event = km_fit$n.event,
+  n.censor = km_fit$n.censor,
+  surv = km_fit$surv,
+  upper = km_fit$upper,
+  lower = km_fit$lower
+)
+write.csv(km_fit_out,file = "KM-fit.CSV", row.names = FALSE)
+
+#plotting Kaplan Meier for patients
+ggsurvplot(km_fit, data = carcinoma,  
+           title = "Kaplan-Meier Survival Function Estimate",
+           caption = "Carcinoma of the Oropharynx Data",
+           xlab="Time (days)", surv.median.line = c("hv")) 
+
+#Estimating Kaplan Meier for patients grouping by treatment
+km_fit_treatment <- survfit(Surv(TIME, STATUS) ~ TX, conf.type="log-log", data=carcinoma)
+km_fit_treatment
+summary(km_fit_treatment)
+
+#Plotting Kaplan Meier for patients grouping by treatment
+ggsurvplot(km_fit_treatment, data = carcinoma, pval = TRUE, 
+           legend.title = "Treatment type",
+           legend.labs = c("Standard", "Test"),
+           title = "Kaplan-Meier Survival Function Estimate",
+           subtitle = "(By treatment type)",
+           caption = "Carcinoma of the Oropharynx Data",
+           xlab="Time (days)", surv.median.line = c("hv"))
+
+#Log rank test
+survdiff(Surv(TIME, STATUS) ~ TX, data = carcinoma)
+#Based on the value, there is no difference
+
+
+#Estimating Kaplan Meier for patients grouping by gender
+km_fit_gender <- survfit(Surv(TIME, STATUS) ~ SEX, conf.type="log-log", data=carcinoma)
+km_fit_gender
+summary(km_fit_gender)
+
+#Plotting Kaplan Meier for patients grouping by gender
+ggsurvplot(km_fit_gender, data = carcinoma, pval = TRUE, 
+           legend.title = "Gender",
+           legend.labs = c("Male", "Female"),
+           title = "Kaplan-Meier Survival Function Estimate",
+           subtitle = "(By gender)",
+           caption = "Carcinoma of the Oropharynx Data",
+           xlab="Time (days)", surv.median.line = c("hv"))
+
+
+#Check datatypes for columns
+str(carcinoma)
+#Columns are stored as integers
+
+#re code categorical columns as categorical
+carcinoma$INST <- factor(carcinoma$INST) 
+carcinoma$SEX <- factor(carcinoma$SEX) 
+carcinoma$TX <- factor(carcinoma$TX)
+carcinoma$GRADE <- factor(carcinoma$GRADE)
+carcinoma$COND <- factor(carcinoma$COND)
+carcinoma$SITE <- factor(carcinoma$SITE)
+carcinoma$T_STAGE <- factor(carcinoma$T_STAGE)
+carcinoma$N_STAGE <- factor(carcinoma$N_STAGE)
+
+str(carcinoma)
+attach(carcinoma)
+#Cox proportional hazard
+#Full model
+result.cox1 <- coxph(Surv(TIME, STATUS) ~ INST+SEX+TX+GRADE+AGE+COND+SITE+T_STAGE+N_STAGE)
+summary(result.cox1)
+# Condition is highly significant, while other covariates are not
+
+#Create another Cox model by removing some variables
+result.cox2 <- coxph(Surv(TIME, STATUS) ~ TX+COND+SITE+T_STAGE+N_STAGE)
+summary(result.cox2)
+#Still only condition of the patient is significant
+
+#Cox model with interaction
+result.cox3 <- coxph(Surv(TIME, STATUS) ~ TX*SEX +  COND+T_STAGE+N_STAGE)
+summary(result.cox3)
+# Only condition is significant
+
+#Cox model with condition only
+result.cox4 <- coxph(Surv(TIME, STATUS) ~ COND)
+summary(result.cox4)
+
+
+#Compare between models
+extractAIC(result.cox1)
+extractAIC(result.cox2)
+extractAIC(result.cox3)
+extractAIC(result.cox4)
+
+#Test PH assumption for our model
+test.ph <- cox.zph(result.cox4)
+test.ph
+#Assumption is satisfied
+
+ggcoxzph(test.ph, font.y = c(12, "bold"), point.col = "red",
+         point.size = 1,
+         point.shape = 15,
+         point.alpha = 10,
+         font.main = 16,
+         caption = 'Testing Ph Assumption')
